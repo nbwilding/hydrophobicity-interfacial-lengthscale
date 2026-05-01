@@ -1,0 +1,58 @@
+# -------------------------------
+# TIP4P/2005 NpT production run
+# -------------------------------
+
+units           real
+atom_style      full
+boundary        p p p
+
+read_data       tip4p_6nm_approx.data
+
+# --- Groups
+group           oxy type 1
+
+# --- TIP4P settings
+pair_style      lj/cut/tip4p/long 1 2 1 1 0.1546 9.0 9.0
+kspace_style    pppm/tip4p 1.0e-5
+
+pair_coeff      1 1 0.1852 3.1589
+pair_coeff      1 2 0.0    0.0
+pair_coeff      2 2 0.0    0.0
+
+# --- Bonds/angles (kept rigid via SHAKE)
+bond_style      zero
+bond_coeff      1 0.9572
+
+angle_style     zero
+angle_coeff     1 104.52
+
+fix             shake all shake 1.0e-4 20 10000 b 1 a 1
+
+# --- Neighbours
+neighbor        2.0 bin
+neigh_modify    every 1 delay 0 check yes
+
+# --- Thermo
+thermo          500
+thermo_style    custom step temp press density pe ke etotal vol
+
+# --- Initial velocities (optional if continuing)
+velocity        all create 300.0 12345 dist gaussian mom yes rot yes
+
+# --- NpT ensemble
+timestep        1.0   # fs
+
+fix             npt all npt temp 300.0 300.0 100.0 iso 1.0 1.0 1000.0
+
+# --- Oxygen-only dump every 500 steps
+dump            dO oxy custom 500 dump.oxy id type x y z
+dump_modify     dO sort id
+
+# --- Optional: trajectory unwrap (if needed)
+# dump_modify   dO unwrap yes
+
+# --- Run
+run             50000000
+
+# --- Write final config
+write_data      tip4p_npt_final.data nocoeff

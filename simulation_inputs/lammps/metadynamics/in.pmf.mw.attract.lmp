@@ -1,0 +1,79 @@
+# PMF for spheres in mw
+units		real
+atom_style	atomic
+
+atom_modify map yes #needed to pick from arrays
+
+variable        w index 10      # Warmup Timesteps
+variable        t index 50000	# Main Run Timesteps
+variable        m index 2000    # Main Run Timestep Multiplier
+
+read_data       equilibrated.water.solute.data
+
+variable        solute_rad equal ${solute_diam}*0.5
+variable        alpha equal 3.0
+variable        mwMass equal 18.015 #grams/mol
+variable        runsteps equal floor($t*$m)
+
+variable        num_atoms equal count(all)
+reset_timestep	0
+
+# you  need to cut at the right distance, i.e. the radius for a purely repulsive sphere
+#pair_style hybrid sw threebody on morse/smooth/linear ${solute_diam}
+pair_style hybrid sw threebody on table linear 4000 morse/smooth/linear ${solute_diam}
+pair_coeff * * sw mW.sw mW NULL NULL
+
+# --- water–solute now uses tabulated potential ---
+pair_coeff 1 2 table Vext${D0water}.table VEXT
+pair_coeff 1 3 table Vext${D0water}.table VEXT
+
+# --- solute–solute interactions unchanged ---
+pair_coeff 2 2 morse/smooth/linear  1.0 ${alpha} ${solute_rad} ${solute_rad} 
+pair_coeff 2 3 morse/smooth/linear  1.0 ${alpha} ${solute_diam} ${solute_diam}
+pair_coeff 3 3 morse/smooth/linear  1.0 ${alpha} ${solute_rad} ${solute_rad}
+
+
+mass		1 ${mwMass}
+mass		2 ${mwMass}
+mass		3 ${mwMass}
+
+group		mW type 1
+group		a2 type 2
+group		a3 type 3
+group           sols type 2 3
+
+neighbor	2 bin #Angstroms
+neigh_modify	every 1 delay 4
+
+velocity	mW zero linear
+
+timestep 2.0
+
+#plumed metadynamics
+
+fix pl all plumed plumedfile plumed.dat outfile plumed.log
+
+# thermostatting
+compute myTemp mW temp
+
+shell "echo $RANDOM > seed.txt"
+variable seed file seed.txt
+
+velocity mW create ${T} ${seed} mom yes rot yes dist gaussian
+
+
+
+fix		1 all npt temp ${T} ${T} 500 iso ${P} ${P} 500
+fix_modify 1 temp myTemp
+
+variable csvname string "op.T${T}.P${P}.Rs${solute_rad}.csv"
+variable dumpname string "sep_T${T}.P${P}.Rs${solute_rad}.xyz"
+log log.T${T}.P${P}.Rs${solute_rad}.log
+
+thermo 100
+
+dump mydump sols custom 500 ${dumpname} type x y z
+dump_modify mydump first yes
+
+
+run		${runsteps}
